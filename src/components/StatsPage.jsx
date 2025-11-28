@@ -109,6 +109,24 @@ export function StatsPage() {
         toast.success('计算完成');
     };
 
+    const getBodyFatRanges = (gender) => {
+        if (gender === 'male') {
+            return [
+                { label: '运动员', range: '6-13%', min: 6, max: 13.9, color: '#3b82f6' },
+                { label: '健身', range: '14-17%', min: 14, max: 17.9, color: '#22c55e' },
+                { label: '普通', range: '18-24%', min: 18, max: 24.9, color: '#eab308' },
+                { label: '肥胖', range: '>25%', min: 25, max: 100, color: '#ef4444' },
+            ];
+        } else {
+            return [
+                { label: '运动员', range: '14-20%', min: 14, max: 20.9, color: '#3b82f6' },
+                { label: '健身', range: '21-24%', min: 21, max: 24.9, color: '#22c55e' },
+                { label: '普通', range: '25-31%', min: 25, max: 31.9, color: '#eab308' },
+                { label: '肥胖', range: '>32%', min: 32, max: 100, color: '#ef4444' },
+            ];
+        }
+    };
+
     return (
         <div className="page active">
             <div className="container">
@@ -207,13 +225,36 @@ export function StatsPage() {
                     </button>
 
                     {bodyFatResult && (
-                        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                            <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>估算体脂率</div>
-                            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#22c55e', marginTop: '4px' }}>
-                                {bodyFatResult}%
+                        <div style={{ marginTop: '16px' }}>
+                            <div style={{ padding: '16px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.2)', marginBottom: '16px' }}>
+                                <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>估算体脂率</div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#22c55e', marginTop: '4px' }}>
+                                    {bodyFatResult}%
+                                </div>
                             </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                                *基于 BMI 公式估算，仅供参考
+
+                            <h4 style={{ fontSize: '14px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                                {bfInputs.gender === 'male' ? '男性' : '女性'}参考范围
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {getBodyFatRanges(bfInputs.gender).map((r, i) => {
+                                    const val = parseFloat(bodyFatResult);
+                                    const isMatch = val >= r.min && val <= r.max;
+
+                                    return (
+                                        <div key={i} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            padding: '8px 12px',
+                                            borderRadius: '6px',
+                                            background: isMatch ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                            border: isMatch ? `1px solid ${r.color}` : '1px solid transparent'
+                                        }}>
+                                            <span style={{ color: isMatch ? 'white' : 'var(--text-muted)' }}>{r.label}</span>
+                                            <span style={{ color: r.color, fontWeight: 'bold' }}>{r.range}</span>
+                                        </div>
+                                    )
+                                })}
                             </div>
                         </div>
                     )}
