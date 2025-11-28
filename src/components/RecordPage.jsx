@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/db';
-import { Plus, Save, Clock, RotateCcw, X, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Save, Clock, RotateCcw, X, Edit2, Trash2, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TemplateBuilder } from './TemplateBuilder';
+import { getBestSet } from '../lib/fitness';
 
 export function RecordPage() {
     const [exercise, setExercise] = useState('');
@@ -14,6 +15,7 @@ export function RecordPage() {
     const [autoTimerEnabled, setAutoTimerEnabled] = useState(false);
     const [recentExercises, setRecentExercises] = useState([]);
     const [timer, setTimer] = useState({ seconds: 90, remaining: 90, isRunning: false });
+    const [currentPR, setCurrentPR] = useState(null);
 
     // Load templates, settings, and recent workouts once on mount
     useEffect(() => {
@@ -50,6 +52,45 @@ export function RecordPage() {
         };
         loadData();
     }, []); // Empty dependency array - only run once on mount
+
+    // Check PR when exercise name changes
+    useEffect(() => {
+        const checkPR = async () => {
+            if (!exercise.trim()) {
+                setCurrentPR(null);
+                return;
+            }
+
+            const workouts = await db.getWorkouts();
+            const history = workouts.filter(w => w.exercise.toLowerCase() === exercise.trim().toLowerCase());
+
+            if (history.length === 0) {
+                setCurrentPR(null);
+                return;
+            }
+
+            let max1RM = 0;
+            let maxWeight = 0;
+
+            history.forEach(w => {
+                const best = getBestSet(w.sets);
+                if (best) {
+                    if (best.oneRM > max1RM) max1RM = best.oneRM;
+                    if (best.weight > maxWeight) maxWeight = best.weight;
+                }
+            });
+
+            if (max1RM > 0) {
+                setCurrentPR({ oneRM: max1RM, weight: maxWeight });
+            } else {
+                setCurrentPR(null);
+            }
+        };
+
+        // Debounce slightly to avoid too many DB calls
+        const timer = setTimeout(checkPR, 500);
+        return () => clearTimeout(timer);
+    }, [exercise]);
 
     const loadRecent = (workout) => {
         setExercise(workout.exercise);
@@ -101,7 +142,27 @@ export function RecordPage() {
         if (!validSets.length) return toast.error('请至少记录一组数据');
 
         await db.addWorkout({ exercise: exercise.trim(), sets: validSets });
-        toast.success(`✅ 已保存: ${exercise}`);
+
+        // Check for PR break
+        const currentBest = getBestSet(validSets);
+        if (currentBest && currentPR) {
+            if (currentBest.oneRM > currentPR.oneRM) {
+                toast('🎉 恭喜！打破了 1RM 纪录！', {
+                    icon: '🏆',
+                    style: {
+                        borderRadius: '10px',
+                        background: '#333',
+                        color: '#fff',
+                    },
+                });
+            } else if (currentBest.weight > currentPR.weight) {
+                toast('💪 恭喜！打破了最大重量纪录！', { icon: '🔥' });
+            } else {
+                toast.success(`✅ 已保存: ${exercise}`);
+            }
+        } else {
+            toast.success(`✅ 已保存: ${exercise}`);
+        }
 
         // Auto-start timer if enabled
         console.log('🔍 自动倒计时检查:', { autoTimerEnabled, isRunning: timer.isRunning });
@@ -281,21 +342,39 @@ export function RecordPage() {
                 {/* Form */}
                 <div className="card">
                     <div className="workout-header">
-                        <input
-                            type="text"
-                            value={exercise}
-                            onChange={e => setExercise(e.target.value)}
-                            placeholder="输入动作名称..."
-                            list="exercise-list"
-                        />
-                        <datalist id="exercise-list">
-                            <option value="深蹲" />
-                            <option value="硬拉" />
-                            <option value="卧推" />
-                            <option value="推举" />
-                            <option value="引体向上" />
-                        </datalist>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 'bold' }}>动作</span>
+                            {currentPR && (
+                                <span className="tag" style={{
+                                    background: 'rgba(234, 179, 8, 0.1)',
+                                    color: '#eab308',
+                                    border: '1px solid rgba(234, 179, 8, 0.2)',
+                                    fontSize: '12px'
+                                }}>
+                                    <Trophy size={10} className="inline mr-1" />
+                                    PR: {currentPR.weight}kg (1RM {currentPR.oneRM})
+                                </span>
+                            )}
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            {new Date().toLocaleDateString()}
+                        </span>
                     </div>
+                    <input
+                        type="text"
+                        className="exercise-input"
+                        placeholder="输入动作名称..."
+                        value={exercise}
+                        onChange={e => setExercise(e.target.value)}
+                        list="exercise-list"
+                    />
+                    <datalist id="exercise-list">
+                        <option value="深蹲" />
+                        <option value="硬拉" />
+                        <option value="卧推" />
+                        <option value="推举" />
+                        <option value="引体向上" />
+                    </datalist>
 
                     <div className="set-list">
                         {sets.map((set, i) => (

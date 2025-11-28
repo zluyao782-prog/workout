@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/db';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Trophy } from 'lucide-react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { getBestSet } from '../lib/fitness';
 
 export function HistoryPage() {
     const [workouts, setWorkouts] = useState([]);
@@ -93,9 +94,8 @@ export function HistoryPage() {
                 />
             );
         }
-        return cells;
+        // Swipeable history item component
     };
-
     const SwipeableHistoryItem = ({ workout }) => {
         const x = useMotionValue(0);
         const background = useTransform(
@@ -103,6 +103,8 @@ export function HistoryPage() {
             [-100, 0],
             ['rgba(220, 38, 38, 0.3)', 'transparent']
         );
+
+        const bestSet = getBestSet(workout.sets);
 
         return (
             <motion.div
@@ -125,10 +127,20 @@ export function HistoryPage() {
                 }}
             >
                 <div className="card history-item">
-                    <div className="history-date">
-                        {new Date(workout.date).toLocaleDateString()} {new Date(workout.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <div className="history-date">
+                                {new Date(workout.date).toLocaleDateString()} {new Date(workout.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                            <div className="history-exercise">{workout.exercise}</div>
+                        </div>
+                        {bestSet && (
+                            <div className="tag" style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                                <Trophy size={12} className="inline mr-1" />
+                                1RM {bestSet.oneRM}kg
+                            </div>
+                        )}
                     </div>
-                    <div className="history-exercise">{workout.exercise}</div>
                     <div className="history-sets">
                         {workout.sets.map((s, i) => (
                             <span key={i} className="tag">{s.weight}kg × {s.reps}</span>
@@ -136,7 +148,7 @@ export function HistoryPage() {
                     </div>
                     <button
                         className="btn-icon"
-                        style={{ position: 'absolute', top: '10px', right: '10px' }}
+                        style={{ position: 'absolute', top: '10px', right: '10px', opacity: 0 }} // Hidden but clickable if needed, or rely on swipe
                         onClick={() => handleDelete(workout.id)}
                     >
                         <Trash2 size={16} />
