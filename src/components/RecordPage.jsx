@@ -14,6 +14,7 @@ export function RecordPage() {
     const [autoTimerEnabled, setAutoTimerEnabled] = useState(false);
     const [timer, setTimer] = useState({ seconds: 90, remaining: 90, isRunning: false });
 
+    // Load templates and settings once on mount
     useEffect(() => {
         const loadTemplates = async () => {
             const t = await db.getTemplates();
@@ -32,8 +33,10 @@ export function RecordPage() {
             }
         };
         loadTemplates();
+    }, []); // Empty dependency array - only run once on mount
 
-        // Timer interval
+    // Timer interval effect
+    useEffect(() => {
         let interval;
         if (timer.isRunning && timer.remaining > 0) {
             interval = setInterval(() => {
