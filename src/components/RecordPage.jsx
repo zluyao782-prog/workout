@@ -21,6 +21,7 @@ export function RecordPage() {
 
             // Load auto-timer setting
             const settings = await db.getSettings();
+            console.log('📊 加载设置:', settings);
             setAutoTimerEnabled(settings.autoTimer);
             if (settings.timerDuration) {
                 setTimer(prev => ({
@@ -76,9 +77,13 @@ export function RecordPage() {
         toast.success(`✅ 已保存: ${exercise}`);
 
         // Auto-start timer if enabled
+        console.log('🔍 自动倒计时检查:', { autoTimerEnabled, isRunning: timer.isRunning });
         if (autoTimerEnabled && !timer.isRunning) {
+            console.log('✅ 启动自动倒计时');
             setTimer(prev => ({ ...prev, isRunning: true, remaining: prev.seconds }));
             toast('⏱️ 休息计时已启动', { icon: '⏰' });
+        } else {
+            console.log('❌ 未启动倒计时，原因:', !autoTimerEnabled ? '功能未开启' : '计时器已在运行');
         }
 
         // Reset
