@@ -7,6 +7,7 @@ export function RecordPage() {
     const [exercise, setExercise] = useState('');
     const [sets, setSets] = useState([{ weight: '', reps: '' }]);
     const [templates, setTemplates] = useState([]);
+    const [activeTemplate, setActiveTemplate] = useState(null);
     const [timer, setTimer] = useState({ seconds: 90, remaining: 90, isRunning: false });
 
     useEffect(() => {
@@ -65,13 +66,21 @@ export function RecordPage() {
     };
 
     const loadTemplate = (template) => {
-        if (!confirm(`开始 "${template.name}" 训练？`)) return;
+        setActiveTemplate(template);
+        toast.success(`选择 "${template.name}" 的动作`);
+    };
 
-        // Load first exercise for now (simplified)
-        const first = template.exercises[0];
-        setExercise(first.name);
-        setSets(Array(first.sets).fill({ weight: '', reps: first.reps || '' }));
-        toast.success(`已加载: ${first.name}`);
+    const loadExercise = (exerciseData) => {
+        setExercise(exerciseData.name);
+        setSets(Array(exerciseData.sets).fill(null).map(() => ({
+            weight: '',
+            reps: exerciseData.reps || ''
+        })));
+        toast.success(`已加载: ${exerciseData.name}`);
+    };
+
+    const closeTemplate = () => {
+        setActiveTemplate(null);
     };
 
     const toggleTimer = () => setTimer(prev => ({ ...prev, isRunning: !prev.isRunning }));
@@ -103,6 +112,61 @@ export function RecordPage() {
                         <Plus size={24} />
                     </div>
                 </div>
+
+                {/* Template Exercise Modal */}
+                {activeTemplate && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.8)',
+                        zIndex: 1000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px'
+                    }} onClick={closeTemplate}>
+                        <div className="card" style={{
+                            maxWidth: '400px',
+                            width: '100%',
+                            maxHeight: '80vh',
+                            overflow: 'auto'
+                        }} onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <h2>{activeTemplate.name}</h2>
+                                <button className="btn-icon" onClick={closeTemplate}>
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
+                                选择要训练的动作：
+                            </p>
+                            {activeTemplate.exercises.map((ex, idx) => (
+                                <div
+                                    key={idx}
+                                    className="card"
+                                    style={{
+                                        marginBottom: '12px',
+                                        cursor: 'pointer',
+                                        background: 'var(--bg-body)',
+                                        border: '1px solid var(--primary)'
+                                    }}
+                                    onClick={() => {
+                                        loadExercise(ex);
+                                        closeTemplate();
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{ex.name}</div>
+                                    <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+                                        {ex.sets} 组 × {ex.reps} 次
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Form */}
                 <div className="card">
