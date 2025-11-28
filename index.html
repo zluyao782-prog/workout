@@ -131,8 +131,14 @@
                     <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <h3>体重趋势</h3>
-                        <button class="btn-icon" onclick="app.logBodyMetric()">+</button>
                     </div>
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <input type="number" id="weight-input" placeholder="输入体重 (kg)" style="flex: 1;">
+                        <button id="save-weight-btn" class="btn btn-primary"
+                            style="width: auto; padding: 0 20px;">记录</button>
+                    </div>
+
                     <canvas id="weight-chart" height="200"></canvas>
                 </div>
 

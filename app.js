@@ -100,21 +100,38 @@ class App {
             isRunning: false
         };
         this.charts = {};
+
+        // Template State
+        this.activeTemplate = null;
+        this.templateStep = 0;
+
         this.init();
     }
 
     init() {
+        // Ensure DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.startApp());
+        } else {
+            this.startApp();
+        }
+    }
+
+    startApp() {
         this.setupEventListeners();
         this.renderHeatmap();
         this.updateStats();
-        // 默认添加一组
         this.addSet();
     }
 
     setupEventListeners() {
         // Navigation
         document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.addEventListener('click', () => this.switchPage(btn.dataset.page));
+            btn.addEventListener('click', (e) => {
+                // Handle click on span or button
+                const target = e.currentTarget;
+                this.switchPage(target.dataset.page);
+            });
         });
 
         // Form
@@ -128,9 +145,23 @@ class App {
         // Settings
         document.getElementById('export-data').addEventListener('click', () => this.exportData());
         document.getElementById('clear-data').addEventListener('click', () => this.clearData());
+
+        // Search
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => this.renderHistory(e.target.value));
+        }
+
+        // Weight Input (New)
+        const saveWeightBtn = document.getElementById('save-weight-btn');
+        if (saveWeightBtn) {
+            saveWeightBtn.addEventListener('click', () => this.saveWeightFromUI());
+        }
     }
 
     switchPage(pageName) {
+        if (!pageName) return;
+
         document.querySelectorAll('.nav-item').forEach(btn =>
             btn.classList.toggle('active', btn.dataset.page === pageName));
 
@@ -176,7 +207,8 @@ class App {
     }
 
     saveWorkout() {
-        const exercise = document.getElementById('exercise-name').value.trim();
+        const exerciseInput = document.getElementById('exercise-name');
+        const exercise = exerciseInput.value.trim();
         if (!exercise) return this.showToast('请输入动作名称');
 
         const sets = [];
@@ -191,10 +223,38 @@ class App {
         this.db.addWorkout({ exercise, sets });
         this.showToast(`✅ 已保存: ${exercise}`);
 
-        // 重置表单
-        document.getElementById('exercise-name').value = '';
+        // Template Logic: Load next exercise if active
+        if (this.activeTemplate) {
+            this.templateStep++;
+            const nextExercise = this.activeTemplate.exercises[this.templateStep];
+
+            if (nextExercise) {
+                this.loadExerciseToForm(nextExercise);
+                this.showToast(`下一个动作: ${nextExercise.name}`);
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return; // Don't clear form normally
+            } else {
+                this.showToast(`🎉 模板 "${this.activeTemplate.name}" 训练完成！`);
+                this.activeTemplate = null;
+                this.templateStep = 0;
+            }
+        }
+
+        // Reset Form (Normal mode)
+        exerciseInput.value = '';
         document.getElementById('sets-container').innerHTML = '';
         this.addSet();
+    }
+
+    loadExerciseToForm(exerciseData) {
+        document.getElementById('exercise-name').value = exerciseData.name;
+        const container = document.getElementById('sets-container');
+        container.innerHTML = '';
+
+        for (let i = 0; i < exerciseData.sets; i++) {
+            this.addSet('', exerciseData.reps || '');
+        }
     }
 
     // ========================================
@@ -204,21 +264,15 @@ class App {
         const template = this.db.getTemplates().find(t => t.id === id);
         if (!template) return;
 
-        if (!confirm(`开始 "${template.name}" 训练？\n这将清空当前未保存的输入。`)) return;
+        if (!confirm(`开始 "${template.name}" 训练？\n这将按顺序加载动作。`)) return;
 
-        // 这里简化处理：目前只支持单动作录入，所以我们只取模板的第一个动作演示
-        // 完整版应该支持多动作列表
+        this.activeTemplate = template;
+        this.templateStep = 0;
+
         const firstExercise = template.exercises[0];
-        document.getElementById('exercise-name').value = firstExercise.name;
+        this.loadExerciseToForm(firstExercise);
 
-        const container = document.getElementById('sets-container');
-        container.innerHTML = '';
-
-        for (let i = 0; i < firstExercise.sets; i++) {
-            this.addSet('', firstExercise.reps);
-        }
-
-        this.showToast(`已加载模板: ${template.name}`);
+        this.showToast(`已加载: ${firstExercise.name}`);
     }
 
     createTemplate() {
@@ -228,12 +282,22 @@ class App {
     // ========================================
     // 历史 & 热力图 (History & Heatmap)
     // ========================================
-    renderHistory() {
+    renderHistory(filter = '') {
         const list = document.getElementById('history-list');
-        const workouts = this.db.getWorkouts();
+        let workouts = this.db.getWorkouts();
+
+        // Filter logic
+        if (filter) {
+            const lowerFilter = filter.toLowerCase();
+            workouts = workouts.filter(w => {
+                const dateStr = new Date(w.date).toLocaleDateString();
+                return w.exercise.toLowerCase().includes(lowerFilter) ||
+                    dateStr.includes(lowerFilter);
+            });
+        }
 
         if (workouts.length === 0) {
-            list.innerHTML = '<div class="text-center" style="padding: 40px; color: var(--text-muted)">暂无记录<br>开始你的第一次训练吧！</div>';
+            list.innerHTML = '<div class="text-center" style="padding: 40px; color: var(--text-muted)">没有找到记录</div>';
             return;
         }
 
@@ -252,8 +316,8 @@ class App {
     deleteWorkout(id) {
         if (confirm('确定删除这条记录吗？')) {
             this.db.deleteWorkout(id);
-            this.renderHistory();
-            this.renderHeatmap(); // 刷新热力图
+            this.renderHistory(document.getElementById('search-input').value);
+            this.renderHeatmap();
         }
     }
 
@@ -271,9 +335,9 @@ class App {
             map[date] = (map[date] || 0) + 1;
         });
 
-        // 生成网格 (简化版：只显示最近3个月，约90天)
         const today = new Date();
-        for (let i = 89; i >= 0; i--) {
+        // Show last 14 weeks (approx 3 months)
+        for (let i = 90; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
             const dateStr = d.toISOString().split('T')[0];
@@ -300,13 +364,17 @@ class App {
         this.renderWeightChart();
     }
 
-    logBodyMetric() {
-        const weight = prompt("请输入当前体重 (kg):");
-        if (weight) {
-            this.db.addBodyMetric(weight);
-            this.updateStats();
-            this.showToast('体重记录已更新');
+    saveWeightFromUI() {
+        const input = document.getElementById('weight-input');
+        const weight = parseFloat(input.value);
+        if (!weight || weight <= 0 || weight > 500) {
+            return this.showToast('请输入有效的体重');
         }
+
+        this.db.addBodyMetric(weight);
+        input.value = '';
+        this.updateStats();
+        this.showToast('体重记录已更新');
     }
 
     renderWeightChart() {
@@ -333,6 +401,7 @@ class App {
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
                 scales: {
                     x: { display: false },
@@ -409,7 +478,15 @@ class App {
         a.download = `workout_backup_${new Date().toISOString().split('T')[0]}.json`;
         a.click();
     }
+
+    clearData() {
+        if (confirm("确定要清空所有数据吗？此操作不可恢复！")) {
+            localStorage.removeItem(this.db.storageKey);
+            location.reload();
+        }
+    }
 }
 
 // Init
 const app = new App();
+```
