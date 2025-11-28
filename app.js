@@ -1,15 +1,58 @@
 // ========================================
-// 数据管理
+// 数据管理 (Data Layer)
 // ========================================
 class WorkoutDB {
     constructor() {
-        this.storageKey = 'workoutData';
+        this.storageKey = 'workoutData_v2';
         this.data = this.loadData();
+        this.migrateData(); // 尝试从v1迁移
     }
 
     loadData() {
         const stored = localStorage.getItem(this.storageKey);
-        return stored ? JSON.parse(stored) : { workouts: [], settings: { theme: 'light' } };
+        return stored ? JSON.parse(stored) : {
+            workouts: [],
+            bodyMetrics: [],
+            templates: [
+                {
+                    id: 'push',
+                    name: '推胸日 (Push)',
+                    exercises: [
+                        { name: '平板卧推', sets: 4, reps: 8 },
+                        { name: '哑铃推举', sets: 3, reps: 10 },
+                        { name: '侧平举', sets: 3, reps: 12 },
+                        { name: '三头下压', sets: 3, reps: 12 }
+                    ]
+                },
+                {
+                    id: 'pull',
+                    name: '练背日 (Pull)',
+                    exercises: [
+                        { name: '引体向上', sets: 4, reps: 8 },
+                        { name: '杠铃划船', sets: 4, reps: 10 },
+                        { name: '面拉', sets: 3, reps: 15 },
+                        { name: '二头弯举', sets: 3, reps: 12 }
+                    ]
+                }
+            ],
+            settings: { theme: 'dark', autoTimer: false }
+        };
+    }
+
+    migrateData() {
+        const v1Data = localStorage.getItem('workoutData');
+        if (v1Data && this.data.workouts.length === 0) {
+            try {
+                const old = JSON.parse(v1Data);
+                if (old.workouts) {
+                    this.data.workouts = old.workouts;
+                    this.saveData();
+                    console.log('Migrated v1 data to v2');
+                }
+            } catch (e) {
+                console.error('Migration failed', e);
+            }
+        }
     }
 
     saveData() {
@@ -24,63 +67,27 @@ class WorkoutDB {
         return workout;
     }
 
-    getWorkouts() {
-        return this.data.workouts;
+    addBodyMetric(weight) {
+        this.data.bodyMetrics.push({
+            date: new Date().toISOString(),
+            weight: parseFloat(weight)
+        });
+        this.data.bodyMetrics.sort((a, b) => new Date(a.date) - new Date(b.date));
+        this.saveData();
     }
+
+    getWorkouts() { return this.data.workouts; }
+    getBodyMetrics() { return this.data.bodyMetrics; }
+    getTemplates() { return this.data.templates; }
 
     deleteWorkout(id) {
         this.data.workouts = this.data.workouts.filter(w => w.id !== id);
         this.saveData();
     }
-
-    updateWorkout(id, updates) {
-        const index = this.data.workouts.findIndex(w => w.id === id);
-        if (index !== -1) {
-            this.data.workouts[index] = { ...this.data.workouts[index], ...updates };
-            this.saveData();
-        }
-    }
-
-    getSetting(key) {
-        return this.data.settings[key];
-    }
-
-    setSetting(key, value) {
-        this.data.settings[key] = value;
-        this.saveData();
-    }
-
-    exportData() {
-        return JSON.stringify(this.data, null, 2);
-    }
-
-    importData(jsonString) {
-        try {
-            const imported = JSON.parse(jsonString);
-            if (imported.workouts && Array.isArray(imported.workouts)) {
-                this.data = imported;
-                this.saveData();
-                return true;
-            }
-        } catch (e) {
-            return false;
-        }
-        return false;
-    }
-
-    clearAll() {
-        this.data = { workouts: [], settings: { theme: this.data.settings.theme } };
-        this.saveData();
-    }
-
-    getStorageSize() {
-        const size = new Blob([this.exportData()]).size;
-        return size < 1024 ? size + ' B' : (size / 1024).toFixed(2) + ' KB';
-    }
 }
 
 // ========================================
-// 应用状态
+// 应用逻辑 (App Controller)
 // ========================================
 class App {
     constructor() {
@@ -92,699 +99,317 @@ class App {
             interval: null,
             isRunning: false
         };
-        this.charts = {
-            volume: null,
-            progress: null
-        };
+        this.charts = {};
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.applyTheme();
-        this.updateStorageInfo();
-        this.setupDeleteButtons();
+        this.renderHeatmap();
+        this.updateStats();
+        // 默认添加一组
+        this.addSet();
     }
 
-    setupDeleteButtons() {
-        // 为初始的第一组添加删除事件
-        const container = document.getElementById('sets-container');
-        container.addEventListener('click', (e) => {
-            if (e.target.classList.contains('delete-set-btn')) {
-                const setItem = e.target.closest('.set-item');
-                this.deleteSet(setItem);
-            }
-        });
-    }
-
-    // ========================================
-    // 事件监听
-    // ========================================
     setupEventListeners() {
-        // 导航
+        // Navigation
         document.querySelectorAll('.nav-item').forEach(btn => {
             btn.addEventListener('click', () => this.switchPage(btn.dataset.page));
         });
 
-        // 主题切换
-        const themeToggle = document.getElementById('theme-toggle');
-        const darkModeToggle = document.getElementById('dark-mode-toggle');
-
-        themeToggle.addEventListener('click', () => this.toggleTheme());
-        darkModeToggle.addEventListener('change', () => this.toggleTheme());
-
-        // 表单提交
-        const workoutForm = document.getElementById('workout-form');
-        workoutForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveWorkout();
-        });
-
-        // 添加组
+        // Form
         document.getElementById('add-set-btn').addEventListener('click', () => this.addSet());
+        document.getElementById('save-btn').addEventListener('click', () => this.saveWorkout());
 
-        // 倒计时器
-        document.getElementById('timer-start').addEventListener('click', () => this.startTimer());
-        document.getElementById('timer-pause').addEventListener('click', () => this.pauseTimer());
+        // Timer
+        document.getElementById('timer-toggle').addEventListener('click', () => this.toggleTimer());
         document.getElementById('timer-reset').addEventListener('click', () => this.resetTimer());
 
-        document.querySelectorAll('.preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.timer.seconds = parseInt(btn.dataset.seconds);
-                this.timer.remaining = this.timer.seconds;
-                this.updateTimerDisplay();
-            });
-        });
-
-        // 搜索
-        document.getElementById('search-input').addEventListener('input', (e) => {
-            this.filterHistory(e.target.value);
-        });
-
-        // 排序
-        document.getElementById('sort-toggle').addEventListener('click', () => {
-            this.toggleSort();
-        });
-
-        // 统计周期
-        document.querySelectorAll('.period-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.updateStats(btn.dataset.period);
-            });
-        });
-
-        // 动作选择器
-        document.getElementById('exercise-select').addEventListener('change', (e) => {
-            this.updateProgressChart(e.target.value);
-        });
-
-        // 设置
+        // Settings
         document.getElementById('export-data').addEventListener('click', () => this.exportData());
-        document.getElementById('import-data').addEventListener('click', () => {
-            document.getElementById('import-file').click();
-        });
-        document.getElementById('import-file').addEventListener('change', (e) => this.importData(e));
         document.getElementById('clear-data').addEventListener('click', () => this.clearData());
     }
 
-    // ========================================
-    // 页面切换
-    // ========================================
     switchPage(pageName) {
-        // 更新导航
-        document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.page === pageName);
-        });
+        document.querySelectorAll('.nav-item').forEach(btn =>
+            btn.classList.toggle('active', btn.dataset.page === pageName));
 
-        // 更新页面
         document.querySelectorAll('.page').forEach(page => {
-            page.classList.toggle('active', page.id === `page-${pageName}`);
+            page.classList.remove('active');
+            if (page.id === `page-${pageName}`) {
+                page.classList.add('active');
+            }
         });
 
         this.currentPage = pageName;
 
-        // 页面特定操作
-        if (pageName === 'history') {
-            this.renderHistory();
-        } else if (pageName === 'stats') {
-            this.updateStats('week');
-        } else if (pageName === 'settings') {
-            this.updateStorageInfo();
-        }
+        if (pageName === 'history') this.renderHistory();
+        if (pageName === 'stats') this.updateStats();
     }
 
     // ========================================
-    // 主题管理
+    // 记录功能 (Record)
     // ========================================
-    toggleTheme() {
-        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-        document.documentElement.setAttribute('data-theme', newTheme);
-
-        const themeIcon = document.querySelector('.theme-icon');
-        themeIcon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-
-        const darkModeToggle = document.getElementById('dark-mode-toggle');
-        darkModeToggle.checked = newTheme === 'dark';
-
-        this.db.setSetting('theme', newTheme);
-
-        // 更新图表颜色
-        if (this.currentPage === 'stats') {
-            this.updateStats(document.querySelector('.period-btn.active').dataset.period);
-        }
-    }
-
-    applyTheme() {
-        const theme = this.db.getSetting('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', theme);
-
-        const themeIcon = document.querySelector('.theme-icon');
-        themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
-
-        const darkModeToggle = document.getElementById('dark-mode-toggle');
-        darkModeToggle.checked = theme === 'dark';
-    }
-
-    // ========================================
-    // 训练记录
-    // ========================================
-    addSet() {
+    addSet(weight = '', reps = '') {
         const container = document.getElementById('sets-container');
-        const setCount = container.querySelectorAll('.set-item').length + 1;
+        const index = container.children.length + 1;
 
-        const setItem = document.createElement('div');
-        setItem.className = 'set-item';
-        setItem.innerHTML = `
-            <div class="set-header">
-                <div class="set-number">第 ${setCount} 组</div>
-                <button type="button" class="delete-set-btn" title="删除此组">🗑️</button>
+        const div = document.createElement('div');
+        div.className = 'set-row';
+        div.innerHTML = `
+            <div class="set-index">${index}</div>
+            <div class="set-input-group">
+                <input type="number" class="set-weight" placeholder="0" value="${weight}" step="0.5">
+                <span>kg</span>
             </div>
-            <div class="set-inputs">
-                <div class="input-group">
-                    <input type="number" class="set-weight" placeholder="重量" step="0.5" min="0" required>
-                    <span class="unit">kg</span>
-                </div>
-                <div class="input-group">
-                    <input type="number" class="set-reps" placeholder="次数" min="1" required>
-                    <span class="unit">次</span>
-                </div>
+            <div class="set-input-group">
+                <input type="number" class="set-reps" placeholder="0" value="${reps}">
+                <span>次</span>
             </div>
+            <button class="btn-icon" onclick="this.parentElement.remove(); app.reindexSets()">✕</button>
         `;
-
-        container.appendChild(setItem);
+        container.appendChild(div);
     }
 
-    deleteSet(setItem) {
-        const container = document.getElementById('sets-container');
-        const setItems = container.querySelectorAll('.set-item');
-
-        // 至少保留一组
-        if (setItems.length <= 1) {
-            this.showToast('⚠️ 至少需要保留一组');
-            return;
-        }
-
-        setItem.remove();
-
-        // 重新编号
-        this.updateSetNumbers();
-    }
-
-    updateSetNumbers() {
-        const setItems = document.querySelectorAll('.set-item');
-        setItems.forEach((item, index) => {
-            const setNumber = item.querySelector('.set-number');
-            setNumber.textContent = `第 ${index + 1} 组`;
-        });
+    reindexSets() {
+        document.querySelectorAll('.set-index').forEach((el, i) => el.textContent = i + 1);
     }
 
     saveWorkout() {
         const exercise = document.getElementById('exercise-name').value.trim();
-        const notes = document.getElementById('notes').value.trim();
+        if (!exercise) return this.showToast('请输入动作名称');
 
-        const setItems = document.querySelectorAll('.set-item');
-        const sets = Array.from(setItems).map(item => ({
-            weight: parseFloat(item.querySelector('.set-weight').value),
-            reps: parseInt(item.querySelector('.set-reps').value)
-        }));
+        const sets = [];
+        document.querySelectorAll('.set-row').forEach(row => {
+            const weight = parseFloat(row.querySelector('.set-weight').value) || 0;
+            const reps = parseFloat(row.querySelector('.set-reps').value) || 0;
+            if (reps > 0) sets.push({ weight, reps });
+        });
 
-        if (!exercise || sets.length === 0) {
-            this.showToast('请填写完整信息');
-            return;
-        }
+        if (sets.length === 0) return this.showToast('请至少记录一组数据');
 
-        const workout = { exercise, sets, notes };
-        this.db.addWorkout(workout);
+        this.db.addWorkout({ exercise, sets });
+        this.showToast(`✅ 已保存: ${exercise}`);
 
-        this.showToast('✅ 记录已保存');
-        this.resetForm();
+        // 重置表单
+        document.getElementById('exercise-name').value = '';
+        document.getElementById('sets-container').innerHTML = '';
+        this.addSet();
     }
 
-    resetForm() {
-        document.getElementById('workout-form').reset();
+    // ========================================
+    // 模板功能 (Templates)
+    // ========================================
+    startTemplate(id) {
+        const template = this.db.getTemplates().find(t => t.id === id);
+        if (!template) return;
 
-        // 保留第一组，删除其他
+        if (!confirm(`开始 "${template.name}" 训练？\n这将清空当前未保存的输入。`)) return;
+
+        // 这里简化处理：目前只支持单动作录入，所以我们只取模板的第一个动作演示
+        // 完整版应该支持多动作列表
+        const firstExercise = template.exercises[0];
+        document.getElementById('exercise-name').value = firstExercise.name;
+
         const container = document.getElementById('sets-container');
-        const setItems = container.querySelectorAll('.set-item');
-        for (let i = 1; i < setItems.length; i++) {
-            setItems[i].remove();
+        container.innerHTML = '';
+
+        for (let i = 0; i < firstExercise.sets; i++) {
+            this.addSet('', firstExercise.reps);
         }
+
+        this.showToast(`已加载模板: ${template.name}`);
+    }
+
+    createTemplate() {
+        this.showToast('功能开发中... 敬请期待');
     }
 
     // ========================================
-    // 历史记录
+    // 历史 & 热力图 (History & Heatmap)
     // ========================================
-    renderHistory(filter = '') {
+    renderHistory() {
+        const list = document.getElementById('history-list');
         const workouts = this.db.getWorkouts();
-        const historyList = document.getElementById('history-list');
 
         if (workouts.length === 0) {
-            historyList.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">📝</div>
-                    <p>还没有训练记录</p>
-                    <p class="empty-hint">点击下方"记录"开始你的第一次训练</p>
-                </div>
-            `;
+            list.innerHTML = '<div class="text-center" style="padding: 40px; color: var(--text-muted)">暂无记录<br>开始你的第一次训练吧！</div>';
             return;
         }
 
-        // 过滤
-        const filtered = filter
-            ? workouts.filter(w => w.exercise.toLowerCase().includes(filter.toLowerCase()))
-            : workouts;
-
-        if (filtered.length === 0) {
-            historyList.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">🔍</div>
-                    <p>没有找到匹配的记录</p>
+        list.innerHTML = workouts.map(w => `
+            <div class="card history-item">
+                <div class="history-date">${new Date(w.date).toLocaleDateString()} ${new Date(w.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div class="history-exercise">${w.exercise}</div>
+                <div class="history-sets">
+                    ${w.sets.map(s => `<span class="tag">${s.weight}kg × ${s.reps}</span>`).join('')}
                 </div>
-            `;
-            return;
-        }
-
-        // 按日期分组
-        const grouped = this.groupByDate(filtered);
-
-        historyList.innerHTML = Object.keys(grouped).map(date => `
-            <div class="history-date">${this.formatDate(date)}</div>
-            ${grouped[date].map(workout => this.renderWorkoutCard(workout)).join('')}
-        `).join('');
-
-        // 添加删除事件
-        historyList.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (confirm('确定删除这条记录吗？')) {
-                    this.db.deleteWorkout(btn.dataset.id);
-                    this.renderHistory(filter);
-                    this.showToast('记录已删除');
-                }
-            });
-        });
-    }
-
-    groupByDate(workouts) {
-        const grouped = {};
-        workouts.forEach(workout => {
-            const date = workout.date.split('T')[0];
-            if (!grouped[date]) grouped[date] = [];
-            grouped[date].push(workout);
-        });
-        return grouped;
-    }
-
-    renderWorkoutCard(workout) {
-        const time = new Date(workout.date).toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        return `
-            <div class="workout-card">
-                <div class="workout-header">
-                    <div>
-                        <div class="workout-title">${workout.exercise}</div>
-                        <div class="workout-time">${time}</div>
-                    </div>
-                    <div class="workout-actions">
-                        <button class="action-btn delete-btn" data-id="${workout.id}">🗑️</button>
-                    </div>
-                </div>
-                <div class="workout-sets">
-                    ${workout.sets.map((set, i) => `
-                        <span class="set-badge">${i + 1}组: ${set.weight}kg × ${set.reps}次</span>
-                    `).join('')}
-                </div>
-                ${workout.notes ? `<div class="workout-notes">💭 ${workout.notes}</div>` : ''}
+                <button class="btn-icon" style="position: absolute; top: 10px; right: 10px;" onclick="app.deleteWorkout('${w.id}')">🗑️</button>
             </div>
-        `;
+        `).join('');
     }
 
-    filterHistory(query) {
-        this.renderHistory(query);
-    }
-
-    toggleSort() {
-        // 简单实现：反转当前列表
-        this.db.data.workouts.reverse();
-        this.renderHistory();
-    }
-
-    formatDate(dateString) {
-        const date = new Date(dateString);
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-
-        if (dateString === today.toISOString().split('T')[0]) {
-            return '今天';
-        } else if (dateString === yesterday.toISOString().split('T')[0]) {
-            return '昨天';
-        } else {
-            return date.toLocaleDateString('zh-CN', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            });
+    deleteWorkout(id) {
+        if (confirm('确定删除这条记录吗？')) {
+            this.db.deleteWorkout(id);
+            this.renderHistory();
+            this.renderHeatmap(); // 刷新热力图
         }
     }
 
-    // ========================================
-    // 倒计时器
-    // ========================================
-    startTimer() {
-        if (this.timer.isRunning) return;
+    renderHeatmap() {
+        const container = document.getElementById('heatmap');
+        if (!container) return;
 
-        this.timer.isRunning = true;
-        document.getElementById('timer-start').disabled = true;
-        document.getElementById('timer-pause').disabled = false;
-        document.querySelector('.timer-display').classList.add('running');
-
-        this.timer.interval = setInterval(() => {
-            this.timer.remaining--;
-            this.updateTimerDisplay();
-
-            if (this.timer.remaining <= 0) {
-                this.timerComplete();
-            }
-        }, 1000);
-    }
-
-    pauseTimer() {
-        this.timer.isRunning = false;
-        clearInterval(this.timer.interval);
-        document.getElementById('timer-start').disabled = false;
-        document.getElementById('timer-pause').disabled = true;
-        document.querySelector('.timer-display').classList.remove('running');
-    }
-
-    resetTimer() {
-        this.pauseTimer();
-        this.timer.remaining = this.timer.seconds;
-        this.updateTimerDisplay();
-    }
-
-    timerComplete() {
-        this.pauseTimer();
-        this.timer.remaining = this.timer.seconds;
-        this.updateTimerDisplay();
-
-        // 震动提醒
-        if ('vibrate' in navigator) {
-            navigator.vibrate([200, 100, 200]);
-        }
-
-        // 音频提醒（简单的beep）
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        oscillator.frequency.value = 800;
-        oscillator.type = 'sine';
-
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.5);
-
-        this.showToast('⏰ 休息时间结束！');
-    }
-
-    updateTimerDisplay() {
-        const minutes = Math.floor(this.timer.remaining / 60);
-        const seconds = this.timer.remaining % 60;
-        const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        document.getElementById('timer-display').textContent = display;
-    }
-
-    // ========================================
-    // 统计数据
-    // ========================================
-    updateStats(period) {
-        const workouts = this.getWorkoutsInPeriod(period);
-
-        // 更新统计卡片
-        document.getElementById('total-workouts').textContent = workouts.length;
-
-        const totalSets = workouts.reduce((sum, w) => sum + w.sets.length, 0);
-        document.getElementById('total-sets').textContent = totalSets;
-
-        const exerciseCounts = {};
-        workouts.forEach(w => {
-            exerciseCounts[w.exercise] = (exerciseCounts[w.exercise] || 0) + 1;
-        });
-
-        const favorite = Object.keys(exerciseCounts).length > 0
-            ? Object.keys(exerciseCounts).reduce((a, b) =>
-                exerciseCounts[a] > exerciseCounts[b] ? a : b)
-            : '-';
-
-        document.getElementById('favorite-exercise').textContent = favorite;
-
-        // 更新图表
-        this.updateVolumeChart(workouts);
-        this.populateExerciseSelect();
-    }
-
-    getWorkoutsInPeriod(period) {
+        container.innerHTML = '';
         const workouts = this.db.getWorkouts();
-        const now = new Date();
 
-        if (period === 'all') return workouts;
-
-        const days = period === 'week' ? 7 : 30;
-        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-        return workouts.filter(w => new Date(w.date) >= cutoff);
-    }
-
-    updateVolumeChart(workouts) {
-        const canvas = document.getElementById('volume-chart');
-        const ctx = canvas.getContext('2d');
-
-        // 按日期统计训练量
-        const dailyVolume = {};
+        // 生成过去365天的数据映射
+        const map = {};
         workouts.forEach(w => {
             const date = w.date.split('T')[0];
-            const volume = w.sets.reduce((sum, set) => sum + (set.weight * set.reps), 0);
-            dailyVolume[date] = (dailyVolume[date] || 0) + volume;
+            map[date] = (map[date] || 0) + 1;
         });
 
-        const sortedDates = Object.keys(dailyVolume).sort();
-        const labels = sortedDates.map(d => new Date(d).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
-        const data = sortedDates.map(d => dailyVolume[d]);
+        // 生成网格 (简化版：只显示最近3个月，约90天)
+        const today = new Date();
+        for (let i = 89; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            const count = map[dateStr] || 0;
 
-        if (this.charts.volume) {
-            this.charts.volume.destroy();
+            const cell = document.createElement('div');
+            cell.className = `heatmap-cell ${count > 0 ? 'active-' + Math.min(count, 4) : ''}`;
+            cell.title = `${dateStr}: ${count} 次训练`;
+            container.appendChild(cell);
         }
+    }
 
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const textColor = isDark ? '#cbd5e1' : '#64748b';
-        const gridColor = isDark ? '#334155' : '#e2e8f0';
+    // ========================================
+    // 统计 & 体重 (Stats)
+    // ========================================
+    updateStats() {
+        const workouts = this.db.getWorkouts();
+        document.getElementById('total-workouts').textContent = workouts.length;
 
-        this.charts.volume = new Chart(ctx, {
-            type: 'bar',
+        const totalVolume = workouts.reduce((sum, w) =>
+            sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0), 0);
+        document.getElementById('total-volume').textContent = (totalVolume / 1000).toFixed(1);
+
+        this.renderWeightChart();
+    }
+
+    logBodyMetric() {
+        const weight = prompt("请输入当前体重 (kg):");
+        if (weight) {
+            this.db.addBodyMetric(weight);
+            this.updateStats();
+            this.showToast('体重记录已更新');
+        }
+    }
+
+    renderWeightChart() {
+        const ctx = document.getElementById('weight-chart');
+        if (!ctx) return;
+
+        const data = this.db.getBodyMetrics();
+        // 如果没有数据，给个空状态或默认
+
+        if (this.charts.weight) this.charts.weight.destroy();
+
+        this.charts.weight = new Chart(ctx, {
+            type: 'line',
             data: {
-                labels: labels,
+                labels: data.map(d => new Date(d.date).toLocaleDateString()),
                 datasets: [{
-                    label: '训练量 (kg)',
-                    data: data,
-                    backgroundColor: 'rgba(99, 102, 241, 0.6)',
-                    borderColor: 'rgba(99, 102, 241, 1)',
-                    borderWidth: 2,
-                    borderRadius: 8
+                    label: '体重 (kg)',
+                    data: data.map(d => d.weight),
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    tension: 0.4,
+                    fill: true
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
+                plugins: { legend: { display: false } },
                 scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: textColor },
-                        grid: { color: gridColor }
-                    },
-                    x: {
-                        ticks: { color: textColor },
-                        grid: { color: gridColor }
-                    }
-                }
-            }
-        });
-    }
-
-    populateExerciseSelect() {
-        const workouts = this.db.getWorkouts();
-        const exercises = [...new Set(workouts.map(w => w.exercise))];
-
-        const select = document.getElementById('exercise-select');
-        select.innerHTML = '<option value="">选择动作...</option>' +
-            exercises.map(ex => `<option value="${ex}">${ex}</option>`).join('');
-
-        if (exercises.length > 0 && !select.value) {
-            select.value = exercises[0];
-            this.updateProgressChart(exercises[0]);
-        }
-    }
-
-    updateProgressChart(exercise) {
-        if (!exercise) return;
-
-        const workouts = this.db.getWorkouts()
-            .filter(w => w.exercise === exercise)
-            .reverse();
-
-        const labels = workouts.map((w, i) => `第${i + 1}次`);
-        const maxWeights = workouts.map(w => Math.max(...w.sets.map(s => s.weight)));
-        const maxReps = workouts.map(w => Math.max(...w.sets.map(s => s.reps)));
-
-        const canvas = document.getElementById('progress-chart');
-        const ctx = canvas.getContext('2d');
-
-        if (this.charts.progress) {
-            this.charts.progress.destroy();
-        }
-
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const textColor = isDark ? '#cbd5e1' : '#64748b';
-        const gridColor = isDark ? '#334155' : '#e2e8f0';
-
-        this.charts.progress = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: '最大重量 (kg)',
-                        data: maxWeights,
-                        borderColor: 'rgba(99, 102, 241, 1)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        borderWidth: 3,
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: '最大次数',
-                        data: maxReps,
-                        borderColor: 'rgba(236, 72, 153, 1)',
-                        backgroundColor: 'rgba(236, 72, 153, 0.1)',
-                        borderWidth: 3,
-                        tension: 0.4,
-                        fill: true
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        labels: { color: textColor }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: textColor },
-                        grid: { color: gridColor }
-                    },
-                    x: {
-                        ticks: { color: textColor },
-                        grid: { color: gridColor }
-                    }
+                    x: { display: false },
+                    y: { grid: { color: '#27272a' } }
                 }
             }
         });
     }
 
     // ========================================
-    // 设置
+    // 计时器 (Timer)
     // ========================================
+    toggleTimer() {
+        if (this.timer.isRunning) {
+            clearInterval(this.timer.interval);
+            this.timer.isRunning = false;
+            document.getElementById('timer-toggle').textContent = '继续';
+        } else {
+            this.timer.interval = setInterval(() => this.tick(), 1000);
+            this.timer.isRunning = true;
+            document.getElementById('timer-toggle').textContent = '暂停';
+        }
+    }
+
+    tick() {
+        this.timer.remaining--;
+        this.updateTimerDisplay();
+        if (this.timer.remaining <= 0) {
+            this.timerComplete();
+        }
+    }
+
+    setTimer(seconds) {
+        this.timer.seconds = seconds;
+        this.resetTimer();
+    }
+
+    resetTimer() {
+        clearInterval(this.timer.interval);
+        this.timer.isRunning = false;
+        this.timer.remaining = this.timer.seconds;
+        this.updateTimerDisplay();
+        document.getElementById('timer-toggle').textContent = '开始计时';
+    }
+
+    updateTimerDisplay() {
+        const m = Math.floor(this.timer.remaining / 60).toString().padStart(2, '0');
+        const s = (this.timer.remaining % 60).toString().padStart(2, '0');
+        document.getElementById('timer-display').textContent = `${m}:${s}`;
+    }
+
+    timerComplete() {
+        this.resetTimer();
+        this.showToast('⏰ 休息结束！');
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+
+    // ========================================
+    // 工具 (Utils)
+    // ========================================
+    showToast(msg) {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        setTimeout(() => toast.style.opacity = '0', 3000);
+    }
+
     exportData() {
-        const data = this.db.exportData();
-        const blob = new Blob([data], { type: 'application/json' });
+        const dataStr = JSON.stringify(this.db.data);
+        const blob = new Blob([dataStr], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `workout-data-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `workout_backup_${new Date().toISOString().split('T')[0]}.json`;
         a.click();
-        URL.revokeObjectURL(url);
-        this.showToast('✅ 数据导出成功');
-    }
-
-    importData(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const success = this.db.importData(e.target.result);
-            if (success) {
-                this.showToast('✅ 数据导入成功');
-                this.renderHistory();
-                this.updateStorageInfo();
-            } else {
-                this.showToast('❌ 数据格式错误');
-            }
-        };
-        reader.readAsText(file);
-        event.target.value = '';
-    }
-
-    clearData() {
-        if (confirm('确定要清空所有数据吗？此操作不可恢复！')) {
-            if (confirm('再次确认：真的要删除所有训练记录吗？')) {
-                this.db.clearAll();
-                this.renderHistory();
-                this.updateStorageInfo();
-                this.showToast('所有数据已清空');
-            }
-        }
-    }
-
-    updateStorageInfo() {
-        document.getElementById('storage-usage').textContent = this.db.getStorageSize();
-    }
-
-    // ========================================
-    // Toast 通知
-    // ========================================
-    showToast(message) {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.classList.add('show');
-
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 3000);
     }
 }
 
-// ========================================
-// 初始化应用
-// ========================================
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new App();
-});
-
-// PWA支持
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        // 注册service worker（可选，需要单独创建sw.js文件）
-        // navigator.serviceWorker.register('/sw.js');
-    });
-}
+// Init
+const app = new App();
