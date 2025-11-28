@@ -50,7 +50,7 @@ function App() {
         </motion.div>
       </AnimatePresence>
 
-      <Navbar currentPage={currentPage} onPageChange={setCurrentPage} />
+      <Navbar activePage={currentPage} onNavigate={setCurrentPage} />
     </div>
   );
 }
