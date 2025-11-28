@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="description" content="简洁强大的健身记录工具">
+    <title>健身记录</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app">
+        <!-- 记录页面 -->
+        <div id="page-record" class="page active">
+            <header class="page-header">
+                <h1>💪 新记录</h1>
+                <button id="theme-toggle" class="icon-btn" aria-label="切换主题">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </header>
+
+            <div class="container">
+                <form id="workout-form" class="workout-form">
+                    <div class="form-group">
+                        <label for="exercise-name">动作名称</label>
+                        <input type="text" id="exercise-name" list="exercise-list" placeholder="例如：深蹲、卧推" required>
+                        <datalist id="exercise-list">
+                            <option value="深蹲">
+                            <option value="硬拉">
+                            <option value="卧推">
+                            <option value="推举">
+                            <option value="划船">
+                            <option value="引体向上">
+                            <option value="双杠臂屈伸">
+                            <option value="二头弯举">
+                            <option value="三头下压">
+                        </datalist>
+                    </div>
+
+                    <div class="sets-container" id="sets-container">
+                        <div class="sets-header">
+                            <h3>组数详情</h3>
+                            <button type="button" id="add-set-btn" class="btn-secondary">+ 添加组</button>
+                        </div>
+                        <div class="set-item">
+                            <div class="set-header">
+                                <div class="set-number">第 1 组</div>
+                                <button type="button" class="delete-set-btn" title="删除此组">🗑️</button>
+                            </div>
+                            <div class="set-inputs">
+                                <div class="input-group">
+                                    <input type="number" class="set-weight" placeholder="重量" step="0.5" min="0"
+                                        required>
+                                    <span class="unit">kg</span>
+                                </div>
+                                <div class="input-group">
+                                    <input type="number" class="set-reps" placeholder="次数" min="1" required>
+                                    <span class="unit">次</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notes">备注 (可选)</label>
+                        <textarea id="notes" rows="3" placeholder="记录今天的感受..."></textarea>
+                    </div>
+
+                    <button type="submit" id="save-btn" class="btn-primary">保存记录</button>
+                </form>
+
+                <!-- 倒计时器卡片 -->
+                <div class="timer-card">
+                    <h3>⏱️ 组间休息</h3>
+                    <div class="timer-display" id="timer-display">01:30</div>
+                    <div class="timer-controls">
+                        <button id="timer-start" class="btn-timer">开始</button>
+                        <button id="timer-pause" class="btn-timer" disabled>暂停</button>
+                        <button id="timer-reset" class="btn-timer">重置</button>
+                    </div>
+                    <div class="timer-presets">
+                        <button class="preset-btn" data-seconds="60">1分钟</button>
+                        <button class="preset-btn" data-seconds="90">1.5分钟</button>
+                        <button class="preset-btn" data-seconds="120">2分钟</button>
+                        <button class="preset-btn" data-seconds="180">3分钟</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史页面 -->
+        <div id="page-history" class="page">
+            <header class="page-header">
+                <h1>📖 训练历史</h1>
+                <button id="sort-toggle" class="icon-btn" aria-label="排序">
+                    <span>🔽</span>
+                </button>
+            </header>
+
+            <div class="container">
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="🔍 搜索动作名称...">
+                </div>
+
+                <div id="history-list" class="history-list">
+                    <div class="empty-state">
+                        <div class="empty-icon">📝</div>
+                        <p>还没有训练记录</p>
+                        <p class="empty-hint">点击下方"记录"开始你的第一次训练</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计页面 -->
+        <div id="page-stats" class="page">
+            <header class="page-header">
+                <h1>📊 数据统计</h1>
+                <div class="stat-period">
+                    <button class="period-btn active" data-period="week">周</button>
+                    <button class="period-btn" data-period="month">月</button>
+                    <button class="period-btn" data-period="all">全部</button>
+                </div>
+            </header>
+
+            <div class="container">
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="stat-label">总训练次数</div>
+                        <div class="stat-value" id="total-workouts">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">总训练组数</div>
+                        <div class="stat-value" id="total-sets">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">最常练习</div>
+                        <div class="stat-value" id="favorite-exercise">-</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h3>训练量趋势</h3>
+                    <canvas id="volume-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>动作进步</h3>
+                    <select id="exercise-select" class="exercise-select">
+                        <option value="">选择动作...</option>
+                    </select>
+                    <canvas id="progress-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置页面 -->
+        <div id="page-settings" class="page">
+            <header class="page-header">
+                <h1>⚙️ 设置</h1>
+            </header>
+
+            <div class="container">
+                <div class="settings-section">
+                    <h3>外观</h3>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <div class="setting-label">深色模式</div>
+                            <div class="setting-desc">切换应用主题</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="dark-mode-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>数据管理</h3>
+                    <button id="export-data" class="settings-btn">
+                        <span>📤 导出数据</span>
+                        <span class="arrow">→</span>
+                    </button>
+                    <button id="import-data" class="settings-btn">
+                        <span>📥 导入数据</span>
+                        <span class="arrow">→</span>
+                    </button>
+                    <input type="file" id="import-file" accept=".json" style="display: none;">
+                    <button id="clear-data" class="settings-btn danger">
+                        <span>🗑️ 清空所有数据</span>
+                        <span class="arrow">→</span>
+                    </button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>关于</h3>
+                    <div class="about-info">
+                        <p><strong>健身记录 v1.0</strong></p>
+                        <p>简洁强大的个人健身追踪工具</p>
+                        <p class="storage-info">存储空间: <span id="storage-usage">0 KB</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部导航 -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-page="record">
+                <span class="nav-icon">🏋️</span>
+                <span class="nav-label">记录</span>
+            </button>
+            <button class="nav-item" data-page="history">
+                <span class="nav-icon">📖</span>
+                <span class="nav-label">历史</span>
+            </button>
+            <button class="nav-item" data-page="stats">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">统计</span>
+            </button>
+            <button class="nav-item" data-page="settings">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-label">设置</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
