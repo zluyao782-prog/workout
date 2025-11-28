@@ -36,19 +36,29 @@ function App() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Toaster position="top-center" />
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentPage}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          variants={pageVariants}
-          transition={pageTransition}
-          style={{ flex: 1, overflow: 'auto' }}
-        >
-          {renderPage()}
-        </motion.div>
-      </AnimatePresence>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentPage}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={pageVariants}
+            transition={pageTransition}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              overflowY: 'auto',
+              paddingBottom: '80px' // Space for navbar
+            }}
+          >
+            {renderPage()}
+          </motion.div>
+        </AnimatePresence>
+      </div>
 
       <Navbar activePage={currentPage} onNavigate={setCurrentPage} />
     </div>
