@@ -12,15 +12,17 @@ export function RecordPage() {
     const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState(null);
     const [autoTimerEnabled, setAutoTimerEnabled] = useState(false);
+    const [recentExercises, setRecentExercises] = useState([]);
     const [timer, setTimer] = useState({ seconds: 90, remaining: 90, isRunning: false });
 
-    // Load templates and settings once on mount
+    // Load templates, settings, and recent workouts once on mount
     useEffect(() => {
-        const loadTemplates = async () => {
+        const loadData = async () => {
+            // Templates
             const t = await db.getTemplates();
             setTemplates(t);
 
-            // Load auto-timer setting
+            // Settings
             const settings = await db.getSettings();
             console.log('📊 加载设置:', settings);
             setAutoTimerEnabled(settings.autoTimer);
@@ -31,9 +33,31 @@ export function RecordPage() {
                     remaining: settings.timerDuration
                 }));
             }
+
+            // Recent Exercises
+            const workouts = await db.getWorkouts();
+            // Get unique last 5 exercises
+            const unique = [];
+            const map = new Map();
+            // Workouts are usually sorted by date index, but let's reverse to get newest first
+            [...workouts].reverse().forEach(w => {
+                if (!map.has(w.exercise)) {
+                    map.set(w.exercise, w);
+                    unique.push(w);
+                }
+            });
+            setRecentExercises(unique.slice(0, 5));
         };
-        loadTemplates();
+        loadData();
     }, []); // Empty dependency array - only run once on mount
+
+    const loadRecent = (workout) => {
+        setExercise(workout.exercise);
+        // Remove weight/reps values but keep structure, or keep values? 
+        // Usually people want to repeat or progressive overload, so keeping values is better.
+        setSets(workout.sets.map(s => ({ weight: s.weight, reps: s.reps })));
+        toast.success(`已加载上次数据: ${workout.exercise}`);
+    };
 
     // Timer interval effect
     useEffect(() => {
