@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/db';
 import { Trash2 } from 'lucide-react';
+import { motion, useMotionValue, useTransform } from 'framer-motion';
+import toast from 'react-hot-toast';
 
 export function HistoryPage() {
     const [workouts, setWorkouts] = useState([]);
@@ -12,20 +14,16 @@ export function HistoryPage() {
     }, []);
 
     const migrateOldData = async () => {
-        // Try to migrate from LocalStorage v2
         const oldData = localStorage.getItem('workoutData_v2');
         if (oldData) {
             try {
                 const parsed = JSON.parse(oldData);
                 if (parsed.workouts && parsed.workouts.length > 0) {
-                    // Check if data already migrated
                     const existing = await db.getWorkouts();
                     if (existing.length === 0) {
-                        // Migrate workouts
                         for (const workout of parsed.workouts) {
                             await db.addWorkout(workout);
                         }
-                        // Migrate body metrics
                         if (parsed.bodyMetrics) {
                             for (const metric of parsed.bodyMetrics) {
                                 await db.addBodyMetric(metric.weight);
@@ -42,30 +40,26 @@ export function HistoryPage() {
 
     const loadWorkouts = async () => {
         const data = await db.getWorkouts();
-        // IndexedDB returns sorted by index (date), but usually ascending. We want descending.
         setWorkouts(data.reverse());
     };
 
     const handleDelete = async (id) => {
-        if (confirm('确定删除这条记录吗？')) {
-            await db.deleteWorkout(id);
-            loadWorkouts();
-        }
+        await db.deleteWorkout(id);
+        loadWorkouts();
+        toast.success('已删除');
     };
 
     const filteredWorkouts = workouts.filter(w => {
         if (!filter) return true;
         const lower = filter.toLowerCase();
 
-        // Format date in multiple ways for better matching
         const date = new Date(w.date);
-        const dateStr = date.toLocaleDateString(); // e.g., "2025/11/28"
-        const isoDate = w.date.split('T')[0]; // e.g., "2025-11-28"
+        const dateStr = date.toLocaleDateString();
+        const isoDate = w.date.split('T')[0];
         const year = date.getFullYear().toString();
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
 
-        // Check if filter matches exercise name or any date format
         return w.exercise.toLowerCase().includes(lower) ||
             dateStr.includes(filter) ||
             isoDate.includes(filter) ||
@@ -74,7 +68,6 @@ export function HistoryPage() {
             `${month}/${day}`.includes(filter);
     });
 
-    // Heatmap Logic
     const renderHeatmap = () => {
         const map = {};
         workouts.forEach(w => {
@@ -101,6 +94,68 @@ export function HistoryPage() {
             );
         }
         return cells;
+    };
+
+    const SwipeableHistoryItem = ({ workout }) => {
+        const x = useMotionValue(0);
+        const background = useTransform(
+            x,
+            [-100, 0],
+            ['rgba(220, 38, 38, 0.3)', 'transparent']
+        );
+
+        return (
+            <motion.div
+                style={{
+                    x,
+                    background,
+                    position: 'relative',
+                    marginBottom: '12px',
+                    borderRadius: '12px'
+                }}
+                drag="x"
+                dragConstraints={{ left: -100, right: 0 }}
+                dragElastic={0.2}
+                onDragEnd={(e, { offset }) => {
+                    if (offset.x < -80) {
+                        if (confirm('确定删除这条记录吗？')) {
+                            handleDelete(workout.id);
+                        }
+                    }
+                }}
+            >
+                <div className="card history-item">
+                    <div className="history-date">
+                        {new Date(workout.date).toLocaleDateString()} {new Date(workout.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div className="history-exercise">{workout.exercise}</div>
+                    <div className="history-sets">
+                        {workout.sets.map((s, i) => (
+                            <span key={i} className="tag">{s.weight}kg × {s.reps}</span>
+                        ))}
+                    </div>
+                    <button
+                        className="btn-icon"
+                        style={{ position: 'absolute', top: '10px', right: '10px' }}
+                        onClick={() => handleDelete(workout.id)}
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
+                <div style={{
+                    position: 'absolute',
+                    right: '20px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    pointerEvents: 'none',
+                    opacity: 0.7
+                }}>
+                    ← 滑动删除
+                </div>
+            </motion.div>
+        );
     };
 
     return (
@@ -137,26 +192,7 @@ export function HistoryPage() {
                             暂无记录
                         </div>
                     ) : (
-                        filteredWorkouts.map(w => (
-                            <div key={w.id} className="card history-item">
-                                <div className="history-date">
-                                    {new Date(w.date).toLocaleDateString()} {new Date(w.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                                <div className="history-exercise">{w.exercise}</div>
-                                <div className="history-sets">
-                                    {w.sets.map((s, i) => (
-                                        <span key={i} className="tag">{s.weight}kg × {s.reps}</span>
-                                    ))}
-                                </div>
-                                <button
-                                    className="btn-icon"
-                                    style={{ position: 'absolute', top: '10px', right: '10px' }}
-                                    onClick={() => handleDelete(w.id)}
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))
+                        filteredWorkouts.map(w => <SwipeableHistoryItem key={w.id} workout={w} />)
                     )}
                 </div>
             </div>
