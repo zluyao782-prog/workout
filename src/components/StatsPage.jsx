@@ -83,6 +83,32 @@ export function StatsPage() {
         }
     };
 
+    const [bfInputs, setBfInputs] = useState({ age: '', gender: 'male', height: '', weight: '' });
+    const [bodyFatResult, setBodyFatResult] = useState(null);
+
+    const calculateBodyFat = () => {
+        const { age, gender, height, weight } = bfInputs;
+        if (!age || !height || !weight) return toast.error('请填写完整信息');
+
+        const h = parseFloat(height) / 100; // cm to m
+        const w = parseFloat(weight);
+        const a = parseFloat(age);
+
+        if (h <= 0 || w <= 0 || a <= 0) return toast.error('请输入有效数值');
+
+        const bmi = w / (h * h);
+        const genderVal = gender === 'male' ? 1 : 0;
+
+        // Formula: (1.20 × BMI) + (0.23 × Age) - (10.8 × Gender) - 5.4
+        let bf = (1.20 * bmi) + (0.23 * a) - (10.8 * genderVal) - 5.4;
+
+        // Sanity check
+        if (bf < 0) bf = 0;
+
+        setBodyFatResult(bf.toFixed(1));
+        toast.success('计算完成');
+    };
+
     return (
         <div className="page active">
             <div className="container">
@@ -126,6 +152,71 @@ export function StatsPage() {
                             <div className="text-center" style={{ color: 'var(--text-muted)', paddingTop: '80px' }}>暂无数据</div>
                         )}
                     </div>
+                </div>
+
+                {/* Body Fat Calculator */}
+                <div className="card">
+                    <h3>体脂率计算器 (BMI法)</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' }}>
+                        <div className="input-group">
+                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>性别</label>
+                            <select
+                                value={bfInputs.gender}
+                                onChange={e => setBfInputs({ ...bfInputs, gender: e.target.value })}
+                                style={{ width: '100%', padding: '12px', background: 'var(--bg-page)', border: '1px solid var(--border)', borderRadius: '8px', color: 'white' }}
+                            >
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                            </select>
+                        </div>
+                        <div className="input-group">
+                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>年龄</label>
+                            <input
+                                type="number"
+                                placeholder="岁"
+                                value={bfInputs.age}
+                                onChange={e => setBfInputs({ ...bfInputs, age: e.target.value })}
+                            />
+                        </div>
+                        <div className="input-group">
+                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>身高 (cm)</label>
+                            <input
+                                type="number"
+                                placeholder="cm"
+                                value={bfInputs.height}
+                                onChange={e => setBfInputs({ ...bfInputs, height: e.target.value })}
+                            />
+                        </div>
+                        <div className="input-group">
+                            <label style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>体重 (kg)</label>
+                            <input
+                                type="number"
+                                placeholder="kg"
+                                value={bfInputs.weight}
+                                onChange={e => setBfInputs({ ...bfInputs, weight: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        className="btn btn-primary"
+                        style={{ width: '100%', marginTop: '16px' }}
+                        onClick={calculateBodyFat}
+                    >
+                        计算体脂率
+                    </button>
+
+                    {bodyFatResult && (
+                        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                            <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>估算体脂率</div>
+                            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#22c55e', marginTop: '4px' }}>
+                                {bodyFatResult}%
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                                *基于 BMI 公式估算，仅供参考
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
