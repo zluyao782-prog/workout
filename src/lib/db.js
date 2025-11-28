@@ -109,6 +109,19 @@ class WorkoutDB {
         });
     }
 
+    async getSettings() {
+        const db = await this.dbPromise;
+        const settings = await db.get('settings', 'app-settings');
+        return settings || { autoTimer: false, timerDuration: 90 };
+    }
+
+    async saveSetting(key, value) {
+        const db = await this.dbPromise;
+        const current = await this.getSettings();
+        const updated = { ...current, [key]: value };
+        await db.put('settings', updated, 'app-settings');
+    }
+
     async exportData() {
         const db = await this.dbPromise;
         const workouts = await db.getAll('workouts');

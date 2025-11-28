@@ -1,19 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/db';
-import { Plus, Save, Clock, RotateCcw, X } from 'lucide-react';
+import { Plus, Save, Clock, RotateCcw, X, Edit2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { TemplateBuilder } from './TemplateBuilder';
 
 export function RecordPage() {
     const [exercise, setExercise] = useState('');
     const [sets, setSets] = useState([{ weight: '', reps: '' }]);
     const [templates, setTemplates] = useState([]);
     const [activeTemplate, setActiveTemplate] = useState(null);
+    const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState(null);
+    const [autoTimerEnabled, setAutoTimerEnabled] = useState(false);
     const [timer, setTimer] = useState({ seconds: 90, remaining: 90, isRunning: false });
 
     useEffect(() => {
         const loadTemplates = async () => {
             const t = await db.getTemplates();
             setTemplates(t);
+
+            // Load auto-timer setting
+            const settings = await db.getSettings();
+            setAutoTimerEnabled(settings.autoTimer);
+            if (settings.timerDuration) {
+                setTimer(prev => ({
+                    ...prev,
+                    seconds: settings.timerDuration,
+                    remaining: settings.timerDuration
+                }));
+            }
         };
         loadTemplates();
 
@@ -60,6 +75,12 @@ export function RecordPage() {
         await db.addWorkout({ exercise: exercise.trim(), sets: validSets });
         toast.success(`✅ 已保存: ${exercise}`);
 
+        // Auto-start timer if enabled
+        if (autoTimerEnabled && !timer.isRunning) {
+            setTimer(prev => ({ ...prev, isRunning: true, remaining: prev.seconds }));
+            toast('⏱️ 休息计时已启动', { icon: '⏰' });
+        }
+
         // Reset
         setExercise('');
         setSets([{ weight: '', reps: '' }]);
@@ -83,6 +104,29 @@ export function RecordPage() {
         setActiveTemplate(null);
     };
 
+    const handleSaveTemplate = async (template) => {
+        await db.saveTemplate(template);
+        const updated = await db.getTemplates();
+        setTemplates(updated);
+        setShowTemplateBuilder(false);
+        setEditingTemplate(null);
+        toast.success(editingTemplate ? '模板已更新' : '模板已创建');
+    };
+
+    const handleEditTemplate = (template) => {
+        setEditingTemplate(template);
+        setShowTemplateBuilder(true);
+    };
+
+    const handleDeleteTemplate = async (templateId) => {
+        if (confirm('确定要删除这个模板吗？')) {
+            await db.deleteTemplate(templateId);
+            const updated = await db.getTemplates();
+            setTemplates(updated);
+            toast.success('模板已删除');
+        }
+    };
+
     const toggleTimer = () => setTimer(prev => ({ ...prev, isRunning: !prev.isRunning }));
     const resetTimer = () => setTimer(prev => ({ ...prev, isRunning: false, remaining: prev.seconds }));
     const setTimerDuration = (sec) => setTimer({ seconds: sec, remaining: sec, isRunning: false });
@@ -103,13 +147,47 @@ export function RecordPage() {
                 {/* Templates */}
                 <div className="template-scroll">
                     {templates.map(t => (
-                        <div key={t.id} className="template-card" onClick={() => loadTemplate(t)}>
-                            <div className="template-name">{t.name}</div>
-                            <div className="template-count">{t.exercises.length} 动作</div>
+                        <div key={t.id} className="template-card" style={{ position: 'relative' }}>
+                            <div onClick={() => loadTemplate(t)} style={{ cursor: 'pointer', flex: 1 }}>
+                                <div className="template-name">{t.name}</div>
+                                <div className="template-count">{t.exercises.length} 动作</div>
+                            </div>
+                            {t.id.startsWith('custom_') && (
+                                <div style={{ display: 'flex', gap: '4px', position: 'absolute', top: '8px', right: '8px' }}>
+                                    <button
+                                        className="btn-icon"
+                                        style={{ padding: '4px' }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditTemplate(t);
+                                        }}
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                    <button
+                                        className="btn-icon"
+                                        style={{ padding: '4px' }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTemplate(t.id);
+                                        }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ))}
-                    <div className="template-card" style={{ borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center' }} onClick={() => toast('功能开发中...')}>
+                    <div
+                        className="template-card"
+                        style={{ borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', cursor: 'pointer' }}
+                        onClick={() => {
+                            setEditingTemplate(null);
+                            setShowTemplateBuilder(true);
+                        }}
+                    >
                         <Plus size={24} />
+                        <div style={{ fontSize: '12px', marginTop: '4px' }}>新建</div>
                     </div>
                 </div>
 
@@ -236,6 +314,18 @@ export function RecordPage() {
                         ))}
                     </div>
                 </div>
+
+                {/* Template Builder Modal */}
+                {showTemplateBuilder && (
+                    <TemplateBuilder
+                        initialTemplate={editingTemplate}
+                        onSave={handleSaveTemplate}
+                        onClose={() => {
+                            setShowTemplateBuilder(false);
+                            setEditingTemplate(null);
+                        }}
+                    />
+                )}
             </div>
         </div>
     );
